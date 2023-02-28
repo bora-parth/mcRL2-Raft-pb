@@ -1,0 +1,18 @@
+% Global Variables
+map MaxServer: Pos;
+eqn MaxServer = 1;
+
+map MaxClientRequest: Pos;
+eqn MaxClientRequest: 1;
+
+map MaxTerm: Pos;
+eqn MaxTerm = 1;
+
+% state of a node
+sort NodeState = struct Leader | Candidate | Follower;
+
+sort AppendEntries = 
+
+% log maitained on each node
+sort Log = List(Msg);
+proc Node(id: Pos, currentState: NodeState, currentTerm: Pos, votedFor: Pos, log: Log) = 
