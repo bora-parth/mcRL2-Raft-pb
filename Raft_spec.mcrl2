@@ -41,6 +41,26 @@ var log, slice: entryList;
 eqn (first == last) -> listSlice(log, slice, first, last) = slice <| (log . last);
     (first != last) ->  listSlice(log, slice, first, last) = listSlice(log, slice <| (log . first), first + 1, last);
 
+map listSliceNat: List(Nat) # List(Nat) # Nat # Nat -> List(Nat);
+var list, slicedList: List(Nat);
+    firstElement, lastElement: Nat; 
+eqn (firstElement == lastElement) -> listSliceNat(list, slicedList, firstElement, lastElement) = slicedList <| (list . lastElement);
+    (firstElement != lastElement) ->  listSliceNat(list, slicedList, firstElement, lastElement) = listSliceNat(list, slicedList <| (list . firstElement), firstElement + 1, lastElement);
+
+map MajorityAgree: Nat # Nat # Nat # List(Nat) -> Nat;
+var index, agreementNo, loopCounter: Nat;
+    array: List(Nat);
+eqn (loopCounter == MaxServer) -> MajorityAgree(index, agreementNo, loopCounter, array) = agreementNo;
+    (index <= array . loopCounter) -> MajorityAgree(index, agreementNo, loopCounter, array)  = MajorityAgree(index, agreementNo + 1, loopCounter + 1, array);
+    (index > array . loopCounter) -> MajorityAgree(index, agreementNo, loopCounter, array)  = MajorityAgree(index, agreementNo, loopCounter + 1, array);  
+
+map MaxAgreeIndex: Nat # List(Nat) -> Nat;
+var index: Nat;
+    array: List(Nat);
+eqn (index == 0) -> MaxAgreeIndex(index, array) = 0;
+    (MajorityAgree(index, 1, 0, array) >= MAJORITY) -> MaxAgreeIndex(index, array) = index;
+    (MajorityAgree(index, 1, 0, array) < MAJORITY) -> MaxAgreeIndex(index, array) = MaxAgreeIndex(Int2Nat(index - 1), array);
+
 map add: List(Nat) # Nat -> List(Nat);
 var listVotes: List(Nat);
     voter: Nat;
@@ -57,7 +77,7 @@ act sendClientRequest, recvClientRequest: Pos # Pos;
 
 % send RPCs
 % send to, RPC, message type, sent from
-act sendAppendEntriesRequest, receiveAppendEntriesRequest, sendAppendEntriesResponse, sendRequestVoteRequest, receiveRequestVote, sendRequestVoteResponse, receiveRequestVoteResponse: Nat # RPC # mType # Nat;
+act sendAppendEntriesRequest, receiveAppendEntriesRequest, sendAppendEntriesResponse, receiveAppendEntriesResponse, sendRequestVoteRequest, receiveRequestVote, sendRequestVoteResponse, receiveRequestVoteResponse: Nat # RPC # mType # Nat;
 % act broadcastMessage: simpleMessage;
 
 proc Node(id: Nat, currentState: NodeState, currentTermNode: Nat, log: entryList, commitIndex: Nat,
@@ -70,6 +90,25 @@ proc Node(id: Nat, currentState: NodeState, currentTermNode: Nat, log: entryList
                     (sendAppendEntriesRequest(receiverID, AppendEntriesReq(currentTermNode, Int2Nat((nextIndex . receiverID) - 1), getTerm(log, Int2Nat((nextIndex . receiverID) - 1)), listSlice(log, [], nextIndex . receiverID, min(#log, nextIndex . receiverID)), commitIndex), MTappendEntriesReq, id)) 
                )
           ) . Node()
+          +
+          (sum senderID, receiverID: Nat, appendEntryRes: RPC, msgType: mType . ( ((senderID != id) && (senderID <= MaxServer) && (msgType == MTappendEntriesResponse) && (receiverID == id)) ->
+                    receiveAppendEntriesResponse(receiverID, appendEntryRes, msgType, senderID) . (
+                         % drop stale message
+                         (currentTerm(appendEntryRes) < currentTermNode) -> Node()   
+                         +
+                         (currentTerm(appendEntryRes) > currentTermNode) -> Node(currentTermNode = currentTerm(appendEntryRes), currentState = Follower, votedFor = -1)
+                         +
+                         (currentTerm(appendEntryRes) == currentTermNode) -> (
+                              (success(appendEntryRes)) -> Node(nextIndex = (listSliceNat(nextIndex, [], 0, Int2Nat(senderID-1)) ++ [matchIndex(appendEntryRes)] ++ listSliceNat(nextIndex, [], (senderID+1), Int2Nat(# nextIndex-1))))
+                              <>
+                              Node(nextIndex = (listSliceNat(nextIndex, [], 0, Int2Nat(senderID-1)) ++ [max(1, nextIndex . senderID)] ++ listSliceNat(nextIndex, [], (senderID+1), Int2Nat(# nextIndex-1))))
+                         )
+                    )
+               )
+          )
+          
+          
+
           
      )
      +
@@ -137,7 +176,7 @@ proc Node(id: Nat, currentState: NodeState, currentTermNode: Nat, log: entryList
           )
      )
      +
-     % handle append entries request
+     % handle append entries request or heartbeat
      (sum senderID, receiverID: Nat, appendEntry: RPC, msgType: mType . ( ((senderID != id) && (senderID <= MaxServer) && (msgType == MTappendEntriesReq) && (receiverID == id)) ->
                receiveAppendEntriesRequest(receiverID, appendEntry, msgType, senderID) . (
                      % discard message if the term is older
