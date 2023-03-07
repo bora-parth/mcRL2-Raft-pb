@@ -3,16 +3,141 @@ map MaxServer: Pos;
 eqn MaxServer = 1;
 
 map MaxClientRequest: Pos;
-eqn MaxClientRequest: 1;
+eqn MaxClientRequest = 1;
 
 map MaxTerm: Pos;
 eqn MaxTerm = 1;
 
+map MAJORITY: Pos;
+eqn MAJORITY = 1;
 % state of a node
 sort NodeState = struct Leader | Candidate | Follower;
 
-sort AppendEntries = 
+sort mType = struct MTreqVote | MTreqVoteResponse | MTappendEntriesReq | MTappendEntriesResponse;
 
+sort RPC = struct RequestVote(currentTerm: Nat, lastLogIndex: Nat, lastLogTerm: Nat) | ResponseVote(currentTerm: Nat, isVoteGranted: Bool) | 
+        AppendEntriesReq(currentTerm: Nat, prevLogIndex: Nat, prevLogTerm: Nat, entries: entryList, leaderCommit: Nat) | 
+        AppendEntriesResponse(success: Bool, matchIndex: Nat);
+
+sort logCommand = struct Command(term: Nat, commandID: Nat);
 % log maitained on each node
-sort Log = List(Msg);
-proc Node(id: Pos, currentState: NodeState, currentTerm: Pos, votedFor: Pos, log: Log) = 
+sort entryList = List(logCommand);
+
+map lastTerm: entryList -> Nat;
+var log: entryList;
+eqn (# log == 0) -> lastTerm(log) = 0;
+    (# log != 0) -> lastTerm(log) = term(rhead(log));
+
+% get term of a particular index of the log
+map getTerm: entryList # Nat -> Nat;
+var log: entryList;
+    index: Nat;
+eqn (index > 0) -> getTerm(log, index) = term(log . index);
+    (index == 0) -> getTerm(log, index) = 0;
+
+map listSlice: entryList # entryList # Nat # Nat -> entryList;
+var log, slice: entryList;
+    first, last: Nat; 
+eqn (first == last) -> listSlice(log, slice, first, last) = slice <| (log . last);
+    (first != last) ->  listSlice(log, slice, first, last) = listSlice(log, slice <| (log . first), first + 1, last);
+
+map add: List(Nat) # Nat -> List(Nat);
+var listVotes: List(Nat);
+    voter: Nat;
+eqn (voter in listVotes) -> add(listVotes, voter) = listVotes;
+    (!(voter in listVotes)) -> add(listVotes, voter) = listVotes <| voter;
+
+map initArray: Nat -> List(Nat);
+var num: Nat;
+eqn initArray(num) = [num, num , num];
+% actions 
+
+% client interaction
+act sendClientRequest, recvClientRequest: Pos # Pos;
+
+% send RPCs
+% send to, RPC, message type, sent from
+act sendAppendEntriesRequest, sendRequestVoteRequest, receiveRequestVote, sendRequestVoteResponse, receiveRequestVoteResponse: Nat # RPC # mType # Nat;
+% act broadcastMessage: simpleMessage;
+
+proc Node(id: Nat, currentState: NodeState, currentTermNode: Nat, log: entryList, commitIndex: Nat,
+          votedFor: Int, votesGranted: List(Nat), nextIndex: List(Nat), matchingIndex: List(Nat)) = 
+     % Leader can receive messages from a client or broadcast messages to other nodes
+     (currentState == Leader) -> (
+          (sum msgID, clientCommandID: Pos . ( (id == msgID) -> recvClientRequest(clientCommandID, msgID)) . Node(log = log <| Command(currentTermNode, clientCommandID)))
+          +
+          (sum receiverID: Nat . ( ((receiverID != id) && (receiverID <= MaxServer)) -> 
+                    (sendAppendEntriesRequest(receiverID, AppendEntriesReq(currentTermNode, Int2Nat((nextIndex . receiverID) - 1), getTerm(log, Int2Nat((nextIndex . receiverID) - 1)), listSlice(log, [], nextIndex . receiverID, min(#log, nextIndex . receiverID)), commitIndex), MTappendEntriesReq, id)) 
+               )
+          ) . Node()
+     )
+     +
+     %Followers can transition into a candidate states and handle vote requests
+     (currentState == Follower) -> (
+          Node(currentState = Candidate, currentTermNode = currentTermNode + 1, votedFor = Nat2Int(id), votesGranted = [id])
+     )
+     +
+     % Candidates can request votes or handle vote responses
+     (currentState == Candidate) -> (
+          % send request vote RPCs
+          (sum receiverID: Nat . (((receiverID != id) && (receiverID <= MaxServer)) -> 
+                    (sendRequestVoteRequest(receiverID, RequestVote(currentTermNode, # log, getTerm(log, Int2Nat(# log - 1))), MTreqVote, id))
+               )
+          )
+         +
+          % receive request vote responses 
+          (sum senderID, receiverID: Nat, voteRequestResponse: RPC, msgType: mType . ( ((senderID != id) && (senderID <= MaxServer) && (msgType == MTreqVoteResponse) && (receiverID == id)) ->
+                    receiveRequestVoteResponse(receiverID, voteRequestResponse, msgType, senderID) . (
+                         (currentTerm(voteRequestResponse) < currentTermNode) -> Node()
+                         +
+                         (currentTerm(voteRequestResponse) > currentTermNode) -> Node(currentTermNode = currentTerm(voteRequestResponse), currentState = Follower, votedFor = -1)
+                         +
+                         (currentTerm(voteRequestResponse) == currentTermNode) -> 
+                              (isVoteGranted(voteRequestResponse)) -> Node(votesGranted = add(votesGranted, senderID)) 
+                    )
+               )
+          )
+          +
+          % become leader
+          (# votesGranted >= MAJORITY) -> Node(currentState = Leader, nextIndex = initArray(# log + 1), matchingIndex = initArray(0))
+     )
+     % things all states can do
+     +
+     % receive request vote request RPCs
+     (sum senderID, receiverID: Nat, voteRequest: RPC, msgType: mType . ( ((senderID != id) && (senderID <= MaxServer) && (msgType == MTreqVote) && (receiverID == id)) ->
+               receiveRequestVote(receiverID, voteRequest, msgType, senderID) . (
+                    % discard message if the term is older
+                    (currentTerm(voteRequest) < currentTermNode) -> Node()
+                    +
+                    (                    
+                         (currentTerm(voteRequest) == currentTermNode) -> 
+                                   % check for validity of the log
+                                   (lastLogTerm(voteRequest) >= getTerm(log, Int2Nat(# log - 1))) -> 
+                                        % vote for the server if we haven't voted for anything or already voted for it
+                                        (votedFor == -1 || votedFor == receiverID) -> sendRequestVoteResponse(senderID, ResponseVote(currentTermNode, true), MTreqVoteResponse, id) . Node(votedFor = senderID)
+                              % reject otherwise
+                                        <>
+                                        sendRequestVoteResponse(senderID, ResponseVote(currentTermNode, false), MTreqVoteResponse, id) . Node()
+                                   <>
+                                   sendRequestVoteResponse(senderID, ResponseVote(currentTermNode, false), MTreqVoteResponse, id) . Node()
+                    )
+                    +
+                    (                    
+                         (currentTerm(voteRequest) > currentTermNode) -> 
+                                   % check for validity of the log
+                                   (lastLogTerm(voteRequest) >= getTerm(log, Int2Nat(# log - 1))) -> 
+                                        % vote for the server if we haven't voted for anything or already voted for it
+                                        sendRequestVoteResponse(senderID, ResponseVote(currentTerm(voteRequest), true), MTreqVoteResponse, id) . Node(currentTermNode = currentTerm(voteRequest), currentState = Follower, votedFor = senderID)
+                                   % reject otherwise
+                                   <>
+                                   sendRequestVoteResponse(senderID, ResponseVote(currentTerm(voteRequest), false), MTreqVoteResponse, id) . Node(currentTermNode = currentTerm(voteRequest), currentState = Follower, votedFor = -1)
+                    )
+               )
+          )
+     )
+     ;
+
+proc Client(clientCommandID: Pos) = 
+     sum serverID: Pos . ((serverID == 5) -> sendClientRequest(clientCommandID, serverID) . Client(clientCommandID+1));
+
+init Client(1);
