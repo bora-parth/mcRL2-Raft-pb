@@ -67,9 +67,10 @@ var listVotes: List(Nat);
 eqn (voter in listVotes) -> add(listVotes, voter) = listVotes;
     (!(voter in listVotes)) -> add(listVotes, voter) = listVotes <| voter;
 
+%change this according to number of servers
 map initArray: Nat -> List(Nat);
 var num: Nat;
-eqn initArray(num) = [num, num , num];
+eqn initArray(num) = [num];
 % actions 
 
 % client interaction
@@ -77,7 +78,7 @@ act sendClientRequest, recvClientRequest: Pos # Pos;
 
 % send RPCs
 % send to, RPC, message type, sent from
-act sendAppendEntriesRequest, receiveAppendEntriesRequest, sendAppendEntriesResponse, receiveAppendEntriesResponse, sendRequestVoteRequest, receiveRequestVote, sendRequestVoteResponse, receiveRequestVoteResponse: Nat # RPC # mType # Nat;
+act sendAppendEntriesRequest, receiveAppendEntriesRequest, appendEntryRequest, sendAppendEntriesResponse, receiveAppendEntriesResponse, appendEntryResponse, sendRequestVoteRequest, receiveRequestVote, RequestVoteMulti, sendRequestVoteResponse, receiveRequestVoteResponse, VoteResponse: Nat # RPC # mType # Nat;
 % act broadcastMessage: simpleMessage;
 
 proc Node(id: Nat, currentState: NodeState, currentTermNode: Nat, log: entryList, commitIndex: Nat,
@@ -91,6 +92,7 @@ proc Node(id: Nat, currentState: NodeState, currentTermNode: Nat, log: entryList
                )
           ) . Node()
           +
+          %receive responses for append entry messages
           (sum senderID, receiverID: Nat, appendEntryRes: RPC, msgType: mType . ( ((senderID != id) && (senderID <= MaxServer) && (msgType == MTappendEntriesResponse) && (receiverID == id)) ->
                     receiveAppendEntriesResponse(receiverID, appendEntryRes, msgType, senderID) . (
                          % drop stale message
@@ -106,10 +108,9 @@ proc Node(id: Nat, currentState: NodeState, currentTermNode: Nat, log: entryList
                     )
                )
           )
-          
-          
-
-          
+          +
+          % advance commit index
+          ((MaxAgreeIndex(# log, matchingIndex) > 0) && (getTerm(log, MaxAgreeIndex(# log, matchingIndex)) == currentTermNode)) -> Node(commitIndex = MaxAgreeIndex(# log, matchingIndex))  
      )
      +
      %Followers can transition into a candidate states and handle vote requests
@@ -222,6 +223,19 @@ proc Node(id: Nat, currentState: NodeState, currentTermNode: Nat, log: entryList
      ;
 
 proc Client(clientCommandID: Pos) = 
-     sum serverID: Pos . ((serverID == 5) -> sendClientRequest(clientCommandID, serverID) . Client(clientCommandID+1));
+     sum serverID: Pos . ((clientCommandID <= MaxClientRequest) -> sendClientRequest(clientCommandID, serverID) . Client(clientCommandID+1));
 
-init Client(1);
+init allow( {appendEntryRequest, appendEntryResponse, RequestVoteMulti, VoteResponse},
+               comm(
+                    {
+                         sendAppendEntriesRequest | receiveAppendEntriesRequest -> appendEntryRequest, 
+                         sendAppendEntriesResponse | receiveAppendEntriesResponse -> appendEntryResponse, 
+                         sendRequestVoteRequest | receiveRequestVote -> RequestVoteMulti, 
+                         sendRequestVoteResponse | receiveRequestVoteResponse -> VoteResponse
+
+                    },
+                    Client(1) || Node(id = 0, currentState = Follower, currentTermNode = 0, log = [], commitIndex = 0,
+          votedFor = -1, votesGranted = [], nextIndex = initArray(0), matchingIndex = initArray(0))
+               )
+
+);
