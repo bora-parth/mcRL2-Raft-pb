@@ -80,6 +80,7 @@ act sendClientRequest, recvClientRequest: Pos # Pos;
 % send to, RPC, message type, sent from
 act sendAppendEntriesRequest, receiveAppendEntriesRequest, appendEntryRequest, sendAppendEntriesResponse, receiveAppendEntriesResponse, appendEntryResponse, sendRequestVoteRequest, receiveRequestVote, RequestVoteMulti, sendRequestVoteResponse, receiveRequestVoteResponse, VoteResponse: Nat # RPC # mType # Nat;
 % act broadcastMessage: simpleMessage;
+act advanceCommitIndex, leaderTransition, candidateTransition;
 
 proc Node(id: Nat, currentState: NodeState, currentTermNode: Nat, log: entryList, commitIndex: Nat,
           votedFor: Int, votesGranted: List(Nat), nextIndex: List(Nat), matchingIndex: List(Nat)) = 
@@ -110,12 +111,12 @@ proc Node(id: Nat, currentState: NodeState, currentTermNode: Nat, log: entryList
           )
           +
           % advance commit index
-          ((MaxAgreeIndex(# log, matchingIndex) > 0) && (getTerm(log, MaxAgreeIndex(# log, matchingIndex)) == currentTermNode)) -> Node(commitIndex = MaxAgreeIndex(# log, matchingIndex))  
+          ((MaxAgreeIndex(# log, matchingIndex) > 0) && (getTerm(log, MaxAgreeIndex(# log, matchingIndex)) == currentTermNode)) -> advanceCommitIndex . Node(commitIndex = MaxAgreeIndex(# log, matchingIndex))  
      )
      +
      %Followers can transition into a candidate states and handle vote requests
      (currentState == Follower) -> (
-          Node(currentState = Candidate, currentTermNode = currentTermNode + 1, votedFor = Nat2Int(id), votesGranted = [id])
+          candidateTransition . Node(currentState = Candidate, currentTermNode = currentTermNode + 1, votedFor = Nat2Int(id), votesGranted = [id])
      )
      +
      % Candidates can request votes or handle vote responses
@@ -140,7 +141,7 @@ proc Node(id: Nat, currentState: NodeState, currentTermNode: Nat, log: entryList
           )
           +
           % become leader
-          (# votesGranted >= MAJORITY) -> Node(currentState = Leader, nextIndex = initArray(# log + 1), matchingIndex = initArray(0))
+          (# votesGranted >= MAJORITY) -> leaderTransition . Node(currentState = Leader, nextIndex = initArray(# log + 1), matchingIndex = initArray(0))
      )
      % things all states can do
      +
