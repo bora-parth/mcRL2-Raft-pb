@@ -156,7 +156,7 @@ proc Node(id: Nat, currentState: NodeState, currentTermNode: Nat, log: entryList
      )
      +
      %Followers can transition into a candidate states and handle vote requests
-     (currentState == Follower) -> (
+     ((currentState == Follower)&& (currentTermNode >= MaxTerm)) -> (
           candidateTransition . Node(currentState = Candidate, currentTermNode = currentTermNode + 1, votedFor = Nat2Int(id), votesGranted = [id])
      )
      +
