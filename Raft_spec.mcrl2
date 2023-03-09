@@ -108,7 +108,7 @@ eqn initArray(num) = [num];
 % client interaction
 % Param 1: Command Id (Id of the command client sends)
 % Param 2: Receiver Id (Id of server that is supposed to receive the message)
-act sendClientRequest, recvClientRequest, clientCommand: Pos # Pos;
+act sendClientRequest, recvClientRequest, clientCommand: Pos # Nat;
 
 % Send & Receive RPCs
 % Param 1: Receiver Id (Id of server that is supposed to receive the message)
@@ -127,7 +127,7 @@ proc Node(id: Nat, currentState: NodeState, currentTermNode: Nat, log: entryList
      % Leader can receive messages from a client or broadcast messages to other nodes
      (currentState == Leader) -> (
           % receive messages from clients
-          (sum msgID, clientCommandID: Pos . ( (id == msgID) -> recvClientRequest(clientCommandID, msgID)) . Node(log = log <| Command(currentTermNode, clientCommandID)))
+          (sum clientCommandID: Pos, msgID: Nat . ( (id == msgID) -> recvClientRequest(clientCommandID, msgID)) . Node(log = log <| Command(currentTermNode, clientCommandID)))
           +
           % send append entry requests to clients
           (sum receiverID: Nat . ( ((receiverID != id) && (receiverID < MaxServer)) -> 
@@ -275,7 +275,7 @@ proc Node(id: Nat, currentState: NodeState, currentTermNode: Nat, log: entryList
      ;
 
 proc Client(clientCommandID: Pos) = 
-     sum serverID: Pos . ((clientCommandID <= MaxClientRequest) -> sendClientRequest(clientCommandID, serverID) . Client(clientCommandID+1));
+     sum serverID: Nat . ((clientCommandID <= MaxClientRequest) -> sendClientRequest(clientCommandID, serverID) . Client(clientCommandID+1));
 
 init allow( {appendEntryRequest, appendEntryResponse, RequestVoteMulti, VoteResponse, clientCommand},
                comm(
