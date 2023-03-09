@@ -58,7 +58,8 @@ var log, slice: entryList;
     first, last: Nat; 
 eqn (first == 0) -> listSlice(log, slice, first, last) = listSlice(log, slice, 1, last);
     (first == min(last, # log)) -> listSlice(log, slice, first, last) = slice <| (log . min(last, # log));
-    (first != min(last, # log)) ->  listSlice(log, slice, first, last) = listSlice(log, slice <| (log . first), first + 1, min(last, # log));
+    (first < min(last, # log)) ->  listSlice(log, slice, first, last) = listSlice(log, slice <| (log . first), first + 1, min(last, # log));
+    (first > min(last, # log)) -> listSlice(log, slice, first, last) = [];
 
 % slice a list of naturals (inclusive of first and last)
 map listSliceNat: List(Nat) # List(Nat) # Nat # Nat -> List(Nat);
@@ -135,7 +136,7 @@ proc Node(id: Nat, currentState: NodeState, currentTermNode: Nat, log: entryList
           ) . Node()
           +
           %receive responses for append entry messages
-          (sum senderID, receiverID: Nat, appendEntryRes: RPC, msgType: mType . ( ((senderID != id) && (senderID <= MaxServer) && (msgType == MTappendEntriesResponse) && (receiverID == id)) ->
+          (sum senderID, receiverID: Nat, appendEntryRes: RPC, msgType: mType . ( ((senderID != id) && (senderID < MaxServer) && (msgType == MTappendEntriesResponse) && (receiverID == id)) ->
                     receiveAppendEntriesResponse(receiverID, appendEntryRes, msgType, senderID) . (
                          % drop stale message
                          (currentTerm(appendEntryRes) < currentTermNode) -> Node()   
@@ -163,16 +164,18 @@ proc Node(id: Nat, currentState: NodeState, currentTermNode: Nat, log: entryList
      % Candidates can request votes or handle vote responses
      (currentState == Candidate) -> (
           % send request vote RPCs
-          (sum receiverID: Nat . (((receiverID != id) && (receiverID <= MaxServer)) -> 
+          (sum receiverID: Nat . (((receiverID != id) && (receiverID < MaxServer)) -> 
                     (sendRequestVoteRequest(receiverID, RequestVote(currentTermNode, # log, getTerm(log, Int2Nat(# log - 1))), MTreqVote, id))
                )
           )
          +
           % receive request vote responses 
-          (sum senderID, receiverID: Nat, voteRequestResponse: RPC, msgType: mType . ( ((senderID != id) && (senderID <= MaxServer) && (msgType == MTreqVoteResponse) && (receiverID == id)) ->
+          (sum senderID, receiverID: Nat, voteRequestResponse: RPC, msgType: mType . ( ((senderID != id) && (senderID < MaxServer) && (msgType == MTreqVoteResponse) && (receiverID == id)) ->
                     receiveRequestVoteResponse(receiverID, voteRequestResponse, msgType, senderID) . (
+                         % drop stale message
                          (currentTerm(voteRequestResponse) < currentTermNode) -> Node()
                          +
+                         % update term if term is higher
                          (currentTerm(voteRequestResponse) > currentTermNode) -> Node(currentTermNode = currentTerm(voteRequestResponse), currentState = Follower, votedFor = -1)
                          +
                          (currentTerm(voteRequestResponse) == currentTermNode) -> 
@@ -181,13 +184,13 @@ proc Node(id: Nat, currentState: NodeState, currentTermNode: Nat, log: entryList
                )
           )
           +
-          % become leader
+          % become leader if majority votes
           (# votesGranted >= MAJORITY) -> leaderTransition . Node(currentState = Leader, nextIndex = initArray(# log + 1), matchingIndex = initArray(0))
      )
      % things all states can do
      +
      % receive request vote request RPCs
-     (sum senderID, receiverID: Nat, voteRequest: RPC, msgType: mType . ( ((senderID != id) && (senderID <= MaxServer) && (msgType == MTreqVote) && (receiverID == id)) ->
+     (sum senderID, receiverID: Nat, voteRequest: RPC, msgType: mType . ( ((senderID != id) && (senderID < MaxServer) && (msgType == MTreqVote) && (receiverID == id)) ->
                receiveRequestVote(receiverID, voteRequest, msgType, senderID) . (
                     % discard message if the term is older
                     (currentTerm(voteRequest) < currentTermNode) -> Node()
@@ -209,9 +212,9 @@ proc Node(id: Nat, currentState: NodeState, currentTermNode: Nat, log: entryList
                          (currentTerm(voteRequest) > currentTermNode) -> 
                                    % check for validity of the log
                                    (lastLogTerm(voteRequest) >= getTerm(log, Int2Nat(# log - 1))) -> 
-                                        % vote for the server if we haven't voted for anything or already voted for it
+                                        % we don't check if we haven't voted for anything or already voted for it because when we update term we automatically set votedFor to nil
                                         sendRequestVoteResponse(senderID, ResponseVote(currentTerm(voteRequest), true), MTreqVoteResponse, id) . Node(currentTermNode = currentTerm(voteRequest), currentState = Follower, votedFor = senderID)
-                                   % reject otherwise
+                                   % reject otherwise & become follower
                                    <>
                                    sendRequestVoteResponse(senderID, ResponseVote(currentTerm(voteRequest), false), MTreqVoteResponse, id) . Node(currentTermNode = currentTerm(voteRequest), currentState = Follower, votedFor = -1)
                     )
@@ -220,19 +223,20 @@ proc Node(id: Nat, currentState: NodeState, currentTermNode: Nat, log: entryList
      )
      +
      % handle append entries request or heartbeat
-     (sum senderID, receiverID: Nat, appendEntry: RPC, msgType: mType . ( ((senderID != id) && (senderID <= MaxServer) && (msgType == MTappendEntriesReq) && (receiverID == id)) ->
+     (sum senderID, receiverID: Nat, appendEntry: RPC, msgType: mType . ( ((senderID != id) && (senderID < MaxServer) && (msgType == MTappendEntriesReq) && (receiverID == id)) ->
                receiveAppendEntriesRequest(receiverID, appendEntry, msgType, senderID) . (
                      % discard message if the term is older
                     (currentTerm(appendEntry) < currentTermNode) -> Node()
                     +
                     (
                          (currentTerm(appendEntry) == currentTermNode) -> 
-                              ((prevLogIndex(appendEntry) >= 0) && (prevLogIndex(appendEntry) <= # log) && (prevLogTerm(appendEntry) == getTerm(log,prevLogIndex(appendEntry)))) ->
+                              % check if log is ok
+                              ((prevLogIndex(appendEntry) == 0) || ((prevLogIndex(appendEntry) > 0) && (prevLogIndex(appendEntry) <= # log) && (prevLogTerm(appendEntry) == (getTerm(log,prevLogIndex(appendEntry)))))) ->
                                    % heartbeat message
                                    (# entries(appendEntry) == 0) -> sendAppendEntriesResponse(senderID, AppendEntriesResponse(currentTermNode, true, prevLogIndex(appendEntry)), MTappendEntriesResponse, id) . Node(commitIndex = leaderCommit(appendEntry))
                                    <>
                                         (
-                                             ((# log >= (prevLogIndex(appendEntry)+1)) && (getTerm(log, (prevLogIndex(appendEntry)+1)) != getTerm(entries(appendEntry), 1))) ->
+                                             ((# log >= (prevLogIndex(appendEntry)+1)) && (getTerm(log, (prevLogIndex(appendEntry)+1)) != term(entries(appendEntry) . 0))) ->
                                                   (# log == prevLogIndex(appendEntry)) -> sendAppendEntriesResponse(senderID, AppendEntriesResponse(currentTermNode, true, prevLogIndex(appendEntry) + 1), MTappendEntriesResponse, id) . Node(log = listSlice(log, [], 1, prevLogIndex(appendEntry)) ++ entries(appendEntry), commitIndex = leaderCommit(appendEntry))
                                                   <>
                                                   sendAppendEntriesResponse(senderID, AppendEntriesResponse(currentTermNode, true, prevLogIndex(appendEntry) + 1), MTappendEntriesResponse, id) . Node(log = listSlice(log, [], 1, prevLogIndex(appendEntry)), commitIndex = leaderCommit(appendEntry))
@@ -276,7 +280,7 @@ init allow( {appendEntryRequest, appendEntryResponse, RequestVoteMulti, VoteResp
                          sendRequestVoteResponse | receiveRequestVoteResponse -> VoteResponse
 
                     },
-                    Client(1) || Node(id = 0, currentState = Follower, currentTermNode = 0, log = [], commitIndex = 0,
+                    Client(1) || Node(id = 0, currentState = Follower, currentTermNode = 0, log = [Command(0,0)], commitIndex = 0,
           votedFor = -1, votesGranted = [], nextIndex = initArray(0), matchingIndex = initArray(0))
                )
 
