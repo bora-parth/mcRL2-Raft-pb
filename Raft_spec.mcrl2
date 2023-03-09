@@ -1,45 +1,60 @@
 % Global Variables
+
+% no. of servers
 map MaxServer: Pos;
 eqn MaxServer = 1;
 
+% max no. of client requests
 map MaxClientRequest: Pos;
 eqn MaxClientRequest = 1;
 
+%max no. of terms
 map MaxTerm: Pos;
 eqn MaxTerm = 1;
 
+% no. that defines the majority within the cluster 
+% we don't model changes in cluster membership so this no. remains constant
 map MAJORITY: Pos;
 eqn MAJORITY = 1;
-% state of a node
+
+% possible states of a node
 sort NodeState = struct Leader | Candidate | Follower;
 
+% possible types of message
 sort mType = struct MTreqVote | MTreqVoteResponse | MTappendEntriesReq | MTappendEntriesResponse;
 
+% structure for different kinds of messages
 sort RPC = struct RequestVote(currentTerm: Nat, lastLogIndex: Nat, lastLogTerm: Nat) | ResponseVote(currentTerm: Nat, isVoteGranted: Bool) | 
         AppendEntriesReq(currentTerm: Nat, prevLogIndex: Nat, prevLogTerm: Nat, entries: entryList, leaderCommit: Nat) | 
         AppendEntriesResponse(currentTerm: Nat, success: Bool, matchIndex: Nat);
 
+% entry (command) inside the log
 sort logCommand = struct Command(term: Nat, commandID: Nat);
-% log maitained on each node
+
+% log maitained on each node (list of commands)
 sort entryList = List(logCommand);
 
+% gets the term of the last command in the log
 map lastTerm: entryList -> Nat;
 var log: entryList;
 eqn (# log == 0) -> lastTerm(log) = 0;
     (# log != 0) -> lastTerm(log) = term(rhead(log));
 
 % get term of a particular index of the log
+% term of index 0 is 0 because log is one-indexed 
 map getTerm: entryList # Nat -> Nat;
 var log: entryList;
     index: Nat;
 eqn (index > 0) -> getTerm(log, index) = term(log . index);
     (index == 0) -> getTerm(log, index) = 0;
 
+% slice a log (inclusive of first and last)
 map listSlice: entryList # entryList # Nat # Nat -> entryList;
 var log, slice: entryList;
     first, last: Nat; 
-eqn (first == last) -> listSlice(log, slice, first, last) = slice <| (log . last);
-    (first != last) ->  listSlice(log, slice, first, last) = listSlice(log, slice <| (log . first), first + 1, last);
+eqn (first == 0) -> listSlice(log, slice, first, last) = listSlice(log, slice, 1, last);
+    (first == min(last, # log)) -> listSlice(log, slice, first, last) = slice <| (log . min(last, # log));
+    (first != min(last, # log)) ->  listSlice(log, slice, first, last) = listSlice(log, slice <| (log . first), first + 1, min(last, # log));
 
 map listSliceNat: List(Nat) # List(Nat) # Nat # Nat -> List(Nat);
 var list, slicedList: List(Nat);
