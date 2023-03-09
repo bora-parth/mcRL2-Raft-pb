@@ -1,7 +1,7 @@
-% Global Variables
+%%%%%%% Global Variables %%%%%%
 
 % no. of servers
-map MaxServer: Pos;
+map MaxServer: Nat;
 eqn MaxServer = 1;
 
 % max no. of client requests
@@ -16,6 +16,8 @@ eqn MaxTerm = 1;
 % we don't model changes in cluster membership so this no. remains constant
 map MAJORITY: Pos;
 eqn MAJORITY = 1;
+
+%%%%% Data Types %%%%%
 
 % possible states of a node
 sort NodeState = struct Leader | Candidate | Follower;
@@ -33,6 +35,8 @@ sort logCommand = struct Command(term: Nat, commandID: Nat);
 
 % log maitained on each node (list of commands)
 sort entryList = List(logCommand);
+
+%%%%%%% Functions (Equations) %%%%%%%
 
 % gets the term of the last command in the log
 map lastTerm: entryList -> Nat;
@@ -56,12 +60,18 @@ eqn (first == 0) -> listSlice(log, slice, first, last) = listSlice(log, slice, 1
     (first == min(last, # log)) -> listSlice(log, slice, first, last) = slice <| (log . min(last, # log));
     (first != min(last, # log)) ->  listSlice(log, slice, first, last) = listSlice(log, slice <| (log . first), first + 1, min(last, # log));
 
+% slice a list of naturals (inclusive of first and last)
 map listSliceNat: List(Nat) # List(Nat) # Nat # Nat -> List(Nat);
 var list, slicedList: List(Nat);
     firstElement, lastElement: Nat; 
 eqn (firstElement == lastElement) -> listSliceNat(list, slicedList, firstElement, lastElement) = slicedList <| (list . lastElement);
     (firstElement != lastElement) ->  listSliceNat(list, slicedList, firstElement, lastElement) = listSliceNat(list, slicedList <| (list . firstElement), firstElement + 1, lastElement);
 
+% return the no. of servers that have a particular entry at the given index
+% Param 1: Index of the entry
+% Param 2: No. of servers that have the entry replicated (by default = 1 because the leader always has this entry in their log)
+% Param 3: loop counter that goes from 0 to max server id
+% Param 4: match index array which stores for each server, index of highest log entry replicated on the server
 map MajorityAgree: Nat # Nat # Nat # List(Nat) -> Nat;
 var index, agreementNo, loopCounter: Nat;
     array: List(Nat);
@@ -69,32 +79,43 @@ eqn (loopCounter == MaxServer) -> MajorityAgree(index, agreementNo, loopCounter,
     (index <= array . loopCounter) -> MajorityAgree(index, agreementNo, loopCounter, array)  = MajorityAgree(index, agreementNo + 1, loopCounter + 1, array);
     (index > array . loopCounter) -> MajorityAgree(index, agreementNo, loopCounter, array)  = MajorityAgree(index, agreementNo, loopCounter + 1, array);  
 
+% returns the highest index for which a log entry has been replicated on a majority of servers
+% Param 1: length of log
+% Param 2: match index array which stores for each server, index of highest log entry replicated on the server
 map MaxAgreeIndex: Nat # List(Nat) -> Nat;
-var index: Nat;
+var lenLog: Nat;
     array: List(Nat);
-eqn (index == 0) -> MaxAgreeIndex(index, array) = 0;
-    (MajorityAgree(index, 1, 0, array) >= MAJORITY) -> MaxAgreeIndex(index, array) = index;
-    (MajorityAgree(index, 1, 0, array) < MAJORITY) -> MaxAgreeIndex(index, array) = MaxAgreeIndex(Int2Nat(index - 1), array);
+eqn (lenLog == 0) -> MaxAgreeIndex(lenLog, array) = 0;
+    (MajorityAgree(lenLog, 1, 0, array) >= MAJORITY) -> MaxAgreeIndex(lenLog, array) = lenLog;
+    (MajorityAgree(lenLog, 1, 0, array) < MAJORITY) -> MaxAgreeIndex(lenLog, array) = MaxAgreeIndex(Int2Nat(lenLog - 1), array);
 
+% add an element to a list if it isn't already in there. If it is, return the same list
 map add: List(Nat) # Nat -> List(Nat);
 var listVotes: List(Nat);
     voter: Nat;
 eqn (voter in listVotes) -> add(listVotes, voter) = listVotes;
     (!(voter in listVotes)) -> add(listVotes, voter) = listVotes <| voter;
 
-%change this according to number of servers
+%CHANGE THIS ACCORDING TO NUMBER OF SERVERS
+% returns an array with num times the no. of servers
 map initArray: Nat -> List(Nat);
 var num: Nat;
 eqn initArray(num) = [num];
-% actions 
+
+%%%%% Actions %%%%%%%%
 
 % client interaction
 act sendClientRequest, recvClientRequest: Pos # Pos;
 
-% send RPCs
-% send to, RPC, message type, sent from
+% Send & Receive RPCs
+% Param 1: Receiver Id (Id of server that is supposed to receive the message)
+% Param 2: The RPC message
+% Param 3: Type of message being sent
+% Param 4; Sender Id (Id of server that sends the message)
+
 act sendAppendEntriesRequest, receiveAppendEntriesRequest, appendEntryRequest, sendAppendEntriesResponse, receiveAppendEntriesResponse, appendEntryResponse, sendRequestVoteRequest, receiveRequestVote, RequestVoteMulti, sendRequestVoteResponse, receiveRequestVoteResponse, VoteResponse: Nat # RPC # mType # Nat;
-% act broadcastMessage: simpleMessage;
+
+% simple actions (required to prevent unguarded recursion)
 act advanceCommitIndex, leaderTransition, candidateTransition;
 
 proc Node(id: Nat, currentState: NodeState, currentTermNode: Nat, log: entryList, commitIndex: Nat,
