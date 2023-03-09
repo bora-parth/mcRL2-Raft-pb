@@ -235,32 +235,38 @@ proc Node(id: Nat, currentState: NodeState, currentTermNode: Nat, log: entryList
                                    % heartbeat message
                                    (# entries(appendEntry) == 0) -> sendAppendEntriesResponse(senderID, AppendEntriesResponse(currentTermNode, true, prevLogIndex(appendEntry)), MTappendEntriesResponse, id) . Node(commitIndex = leaderCommit(appendEntry))
                                    <>
-                                        (
+                                        (    % check for conflict with leader
                                              ((# log >= (prevLogIndex(appendEntry)+1)) && (getTerm(log, (prevLogIndex(appendEntry)+1)) != term(entries(appendEntry) . 0))) ->
-                                                  (# log == prevLogIndex(appendEntry)) -> sendAppendEntriesResponse(senderID, AppendEntriesResponse(currentTermNode, true, prevLogIndex(appendEntry) + 1), MTappendEntriesResponse, id) . Node(log = listSlice(log, [], 1, prevLogIndex(appendEntry)) ++ entries(appendEntry), commitIndex = leaderCommit(appendEntry))
+                                                  (# listSlice(log, [], 1, prevLogIndex(appendEntry)) == prevLogIndex(appendEntry)) -> sendAppendEntriesResponse(senderID, AppendEntriesResponse(currentTermNode, true, prevLogIndex(appendEntry) + 1), MTappendEntriesResponse, id) . Node(log = listSlice(log, [], 1, prevLogIndex(appendEntry)) ++ entries(appendEntry), commitIndex = leaderCommit(appendEntry))
                                                   <>
                                                   sendAppendEntriesResponse(senderID, AppendEntriesResponse(currentTermNode, true, prevLogIndex(appendEntry) + 1), MTappendEntriesResponse, id) . Node(log = listSlice(log, [], 1, prevLogIndex(appendEntry)), commitIndex = leaderCommit(appendEntry))
                                              <>
                                              sendAppendEntriesResponse(senderID, AppendEntriesResponse(currentTermNode, true, prevLogIndex(appendEntry) + 1), MTappendEntriesResponse, id) . Node(commitIndex = leaderCommit(appendEntry))
                                         )
+                              % log is not okay
+                              <>
+                              sendAppendEntriesResponse(senderID, AppendEntriesResponse(currentTermNode, false, 0), MTappendEntriesResponse, id) . Node()
 
                     )
                     +
                     %if the append entry request has higher term then update our term
                     (
-                         (currentTerm(appendEntry) == currentTermNode) -> 
-                              ((prevLogIndex(appendEntry) >= 0) && (prevLogIndex(appendEntry) <= # log) && (prevLogTerm(appendEntry) == getTerm(log,prevLogIndex(appendEntry)))) ->
+                         (currentTerm(appendEntry) > currentTermNode) -> 
+                              ((prevLogIndex(appendEntry) == 0) || ((prevLogIndex(appendEntry) > 0) && (prevLogIndex(appendEntry) <= # log) && (prevLogTerm(appendEntry) == (getTerm(log,prevLogIndex(appendEntry)))))) ->
                                    % heartbeat message
                                    (# entries(appendEntry) == 0) -> sendAppendEntriesResponse(senderID, AppendEntriesResponse(currentTerm(appendEntry), true, prevLogIndex(appendEntry)), MTappendEntriesResponse, id) . Node(currentTermNode = currentTerm(appendEntry), currentState = Follower, votedFor = -1, commitIndex = leaderCommit(appendEntry))
                                    <>
-                                        (
-                                             ((# log >= (prevLogIndex(appendEntry)+1)) && (getTerm(log, (prevLogIndex(appendEntry)+1)) != getTerm(entries(appendEntry), 1))) ->
-                                                  (# log == prevLogIndex(appendEntry)) -> sendAppendEntriesResponse(senderID, AppendEntriesResponse(currentTerm(appendEntry), true, prevLogIndex(appendEntry) + 1), MTappendEntriesResponse, id) . Node(currentTermNode = currentTerm(appendEntry), currentState = Follower, votedFor = -1, log = listSlice(log, [], 1, prevLogIndex(appendEntry)) ++ entries(appendEntry), commitIndex = leaderCommit(appendEntry))
+                                        (    % check for conflict with leader
+                                             ((# log >= (prevLogIndex(appendEntry)+1)) && (getTerm(log, (prevLogIndex(appendEntry)+1)) !=  term(entries(appendEntry) . 0))) ->
+                                                  (# listSlice(log, [], 1, prevLogIndex(appendEntry)) == prevLogIndex(appendEntry)) -> sendAppendEntriesResponse(senderID, AppendEntriesResponse(currentTerm(appendEntry), true, prevLogIndex(appendEntry) + 1), MTappendEntriesResponse, id) . Node(currentTermNode = currentTerm(appendEntry), currentState = Follower, votedFor = -1, log = listSlice(log, [], 1, prevLogIndex(appendEntry)) ++ entries(appendEntry), commitIndex = leaderCommit(appendEntry))
                                                   <>
                                                   sendAppendEntriesResponse(senderID, AppendEntriesResponse(currentTerm(appendEntry), true, prevLogIndex(appendEntry) + 1), MTappendEntriesResponse, id) . Node(currentTermNode = currentTerm(appendEntry), currentState = Follower, votedFor = -1, log = listSlice(log, [], 1, prevLogIndex(appendEntry)), commitIndex = leaderCommit(appendEntry))
                                              <>
                                              sendAppendEntriesResponse(senderID, AppendEntriesResponse(currentTerm(appendEntry), true, prevLogIndex(appendEntry) + 1), MTappendEntriesResponse, id) . Node(currentTermNode = currentTerm(appendEntry), currentState = Follower, votedFor = -1, commitIndex = leaderCommit(appendEntry))
                                         )
+                              % log is not okay
+                              <>
+                              sendAppendEntriesResponse(senderID, AppendEntriesResponse(currentTerm(appendEntry), false, 0), MTappendEntriesResponse, id) . Node(currentTermNode = currentTerm(appendEntry), currentState = Follower, votedFor = -1)
 
                     )
                )
