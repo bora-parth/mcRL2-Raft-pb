@@ -105,6 +105,8 @@ eqn initArray(num) = [num];
 %%%%% Actions %%%%%%%%
 
 % client interaction
+% Param 1: Command Id (Id of the command client sends)
+% Param 2: Receiver Id (Id of server that is supposed to receive the message)
 act sendClientRequest, recvClientRequest: Pos # Pos;
 
 % Send & Receive RPCs
@@ -118,13 +120,16 @@ act sendAppendEntriesRequest, receiveAppendEntriesRequest, appendEntryRequest, s
 % simple actions (required to prevent unguarded recursion)
 act advanceCommitIndex, leaderTransition, candidateTransition;
 
+% votedFor has special value -1 if the node hasn't voted for anyone
 proc Node(id: Nat, currentState: NodeState, currentTermNode: Nat, log: entryList, commitIndex: Nat,
           votedFor: Int, votesGranted: List(Nat), nextIndex: List(Nat), matchingIndex: List(Nat)) = 
      % Leader can receive messages from a client or broadcast messages to other nodes
      (currentState == Leader) -> (
+          % receive messages from clients
           (sum msgID, clientCommandID: Pos . ( (id == msgID) -> recvClientRequest(clientCommandID, msgID)) . Node(log = log <| Command(currentTermNode, clientCommandID)))
           +
-          (sum receiverID: Nat . ( ((receiverID != id) && (receiverID <= MaxServer)) -> 
+          % send append entry requests to clients
+          (sum receiverID: Nat . ( ((receiverID != id) && (receiverID < MaxServer)) -> 
                     (sendAppendEntriesRequest(receiverID, AppendEntriesReq(currentTermNode, Int2Nat((nextIndex . receiverID) - 1), getTerm(log, Int2Nat((nextIndex . receiverID) - 1)), listSlice(log, [], nextIndex . receiverID, min(#log, nextIndex . receiverID)), commitIndex), MTappendEntriesReq, id)) 
                )
           ) . Node()
@@ -138,9 +143,9 @@ proc Node(id: Nat, currentState: NodeState, currentTermNode: Nat, log: entryList
                          (currentTerm(appendEntryRes) > currentTermNode) -> Node(currentTermNode = currentTerm(appendEntryRes), currentState = Follower, votedFor = -1)
                          +
                          (currentTerm(appendEntryRes) == currentTermNode) -> (
-                              (success(appendEntryRes)) -> Node(nextIndex = (listSliceNat(nextIndex, [], 0, Int2Nat(senderID-1)) ++ [matchIndex(appendEntryRes)] ++ listSliceNat(nextIndex, [], (senderID+1), Int2Nat(# nextIndex-1))))
+                              (success(appendEntryRes)) -> Node(nextIndex = (listSliceNat(nextIndex, [], 0, Int2Nat(senderID-1)) ++ [matchIndex(appendEntryRes) + 1] ++ listSliceNat(nextIndex, [], (senderID+1), Int2Nat(# nextIndex-1))), matchingIndex = (listSliceNat(matchingIndex, [], 0, Int2Nat(senderID-1)) ++ [matchIndex(appendEntryRes)] ++ listSliceNat(matchingIndex, [], (senderID+1), Int2Nat(# matchingIndex-1))))
                               <>
-                              Node(nextIndex = (listSliceNat(nextIndex, [], 0, Int2Nat(senderID-1)) ++ [max(1, nextIndex . senderID)] ++ listSliceNat(nextIndex, [], (senderID+1), Int2Nat(# nextIndex-1))))
+                              Node()
                          )
                     )
                )
