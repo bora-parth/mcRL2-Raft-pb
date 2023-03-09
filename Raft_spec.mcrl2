@@ -108,7 +108,7 @@ eqn initArray(num) = [num];
 % client interaction
 % Param 1: Command Id (Id of the command client sends)
 % Param 2: Receiver Id (Id of server that is supposed to receive the message)
-act sendClientRequest, recvClientRequest: Pos # Pos;
+act sendClientRequest, recvClientRequest, clientCommand: Pos # Pos;
 
 % Send & Receive RPCs
 % Param 1: Receiver Id (Id of server that is supposed to receive the message)
@@ -157,7 +157,7 @@ proc Node(id: Nat, currentState: NodeState, currentTermNode: Nat, log: entryList
      )
      +
      %Followers can transition into a candidate states and handle vote requests
-     ((currentState == Follower)&& (currentTermNode >= MaxTerm)) -> (
+     ((currentState == Follower) && (currentTermNode < MaxTerm)) -> (
           candidateTransition . Node(currentState = Candidate, currentTermNode = currentTermNode + 1, votedFor = Nat2Int(id), votesGranted = [id])
      )
      +
@@ -277,9 +277,10 @@ proc Node(id: Nat, currentState: NodeState, currentTermNode: Nat, log: entryList
 proc Client(clientCommandID: Pos) = 
      sum serverID: Pos . ((clientCommandID <= MaxClientRequest) -> sendClientRequest(clientCommandID, serverID) . Client(clientCommandID+1));
 
-init allow( {appendEntryRequest, appendEntryResponse, RequestVoteMulti, VoteResponse},
+init allow( {appendEntryRequest, appendEntryResponse, RequestVoteMulti, VoteResponse, clientCommand},
                comm(
                     {
+                         sendClientRequest | recvClientRequest -> clientCommand,
                          sendAppendEntriesRequest | receiveAppendEntriesRequest -> appendEntryRequest, 
                          sendAppendEntriesResponse | receiveAppendEntriesResponse -> appendEntryResponse, 
                          sendRequestVoteRequest | receiveRequestVote -> RequestVoteMulti, 
