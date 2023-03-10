@@ -287,8 +287,9 @@ init allow( {appendEntryRequest, appendEntryResponse, RequestVoteMulti, VoteResp
                          sendRequestVoteResponse | receiveRequestVoteResponse -> VoteResponse
 
                     },
-                    Client(1) || Node(id = 0, currentState = Follower, currentTermNode = 0, log = [Command(0,0)], commitIndex = 0,
-          votedFor = -1, votesGranted = [], nextIndex = initArray(0), matchingIndex = initArray(0))
+                    hide( {advanceCommitIndex, leaderTransition, candidateTransition},
+                         Client(1) || Node(id = 0, currentState = Follower, currentTermNode = 0, log = [Command(0,0)], commitIndex = 0,
+          votedFor = -1, votesGranted = [], nextIndex = initArray(0), matchingIndex = initArray(0)))
                )
 
 );
