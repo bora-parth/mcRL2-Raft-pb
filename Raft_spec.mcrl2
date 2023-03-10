@@ -103,6 +103,11 @@ map initArray: Nat -> List(Nat);
 var num: Nat;
 eqn initArray(num) = [num];
 
+% return the length of the log (# log - 1) because log is 1-indexed
+map lengthLog: entryList -> Nat;
+var log: entryList;
+eqn lengthLog(log) = Int2Nat(# log -1); 
+
 %%%%% Actions %%%%%%%%
 
 % client interaction
