@@ -134,7 +134,7 @@ proc Node(id: Nat, currentState: NodeState, currentTermNode: Nat, log: entryList
           % receive messages from clients
           (sum clientCommandID: Pos, msgID: Nat . ( (id == msgID) -> recvClientRequest(clientCommandID, msgID)) . Node(log = log <| Command(currentTermNode, clientCommandID)))
           +
-          % send append entry requests to clients
+          % send append entry requests to servers
           (sum receiverID: Nat . ( ((receiverID != id) && (receiverID < MaxServer)) -> 
                     (sendAppendEntriesRequest(receiverID, AppendEntriesReq(currentTermNode, Int2Nat((nextIndex . receiverID) - 1), getTerm(log, Int2Nat((nextIndex . receiverID) - 1)), listSlice(log, [], nextIndex . receiverID, min(#log, nextIndex . receiverID)), commitIndex), MTappendEntriesReq, id)) 
                )
@@ -170,7 +170,7 @@ proc Node(id: Nat, currentState: NodeState, currentTermNode: Nat, log: entryList
      (currentState == Candidate) -> (
           % send request vote RPCs
           (sum receiverID: Nat . (((receiverID != id) && (receiverID < MaxServer)) -> 
-                    (sendRequestVoteRequest(receiverID, RequestVote(currentTermNode, lengthLog(log), getTerm(log, Int2Nat(lengthLog(log) - 1))), MTreqVote, id))
+                    (sendRequestVoteRequest(receiverID, RequestVote(currentTermNode, lengthLog(log), getTerm(log, lengthLog(log))), MTreqVote, id))
                )
           )
          +
@@ -183,14 +183,15 @@ proc Node(id: Nat, currentState: NodeState, currentTermNode: Nat, log: entryList
                          % update term if term is higher
                          (currentTerm(voteRequestResponse) > currentTermNode) -> Node(currentTermNode = currentTerm(voteRequestResponse), currentState = Follower, votedFor = -1)
                          +
+                         % term is the same
                          (currentTerm(voteRequestResponse) == currentTermNode) -> 
                               (isVoteGranted(voteRequestResponse)) -> Node(votesGranted = add(votesGranted, senderID)) 
                     )
                )
           )
-          +
-          % become leader if majority votes
-          (# votesGranted >= MAJORITY) -> leaderTransition . Node(currentState = Leader, nextIndex = initArray(lengthLog(log) + 1), matchingIndex = initArray(0))
+         +
+         % become leader if majority votes
+         (# votesGranted >= MAJORITY) -> leaderTransition . Node(currentState = Leader, nextIndex = initArray(lengthLog(log) + 1), matchingIndex = initArray(0))
      )
      % things all states can do
      +
@@ -282,7 +283,7 @@ proc Node(id: Nat, currentState: NodeState, currentTermNode: Nat, log: entryList
 proc Client(clientCommandID: Pos) = 
      sum serverID: Nat . ((clientCommandID <= MaxClientRequest) -> sendClientRequest(clientCommandID, serverID) . Client(clientCommandID+1));
 
-init allow( {appendEntryRequest, appendEntryResponse, RequestVoteMulti, VoteResponse, clientCommand},
+init allow( {appendEntryRequest, appendEntryResponse, RequestVoteMulti, VoteResponse, clientCommand, advanceCommitIndex, leaderTransition, candidateTransition},
                comm(
                     {
                          sendClientRequest | recvClientRequest -> clientCommand,
@@ -292,9 +293,12 @@ init allow( {appendEntryRequest, appendEntryResponse, RequestVoteMulti, VoteResp
                          sendRequestVoteResponse | receiveRequestVoteResponse -> VoteResponse
 
                     },
-                    hide( {advanceCommitIndex, leaderTransition, candidateTransition},
+                   % hide( {advanceCommitIndex, leaderTransition, candidateTransition},
+
                          Client(1) || Node(id = 0, currentState = Follower, currentTermNode = 0, log = [Command(0,0)], commitIndex = 0,
-          votedFor = -1, votesGranted = [], nextIndex = initArray(0), matchingIndex = initArray(0)))
+          votedFor = -1, votesGranted = [], nextIndex = initArray(0), matchingIndex = initArray(0)) 
+
+                        % )
                )
 
 );
