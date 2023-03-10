@@ -162,7 +162,7 @@ proc Node(id: Nat, currentState: NodeState, currentTermNode: Nat, log: entryList
      )
      +
      %Followers can transition into a candidate states and handle vote requests
-     ((currentState == Follower) && (currentTermNode < MaxTerm)) -> (
+     (((currentState == Follower) || (currentState == Candidate)) && (currentTermNode < MaxTerm)) -> (
           candidateTransition . Node(currentState = Candidate, currentTermNode = currentTermNode + 1, votedFor = Nat2Int(id), votesGranted = [id])
      )
      +
@@ -172,7 +172,7 @@ proc Node(id: Nat, currentState: NodeState, currentTermNode: Nat, log: entryList
           (sum receiverID: Nat . (((receiverID != id) && (receiverID < MaxServer)) -> 
                     (sendRequestVoteRequest(receiverID, RequestVote(currentTermNode, lengthLog(log), getTerm(log, lengthLog(log))), MTreqVote, id))
                )
-          )
+          ) . Node()
          +
           % receive request vote responses 
           (sum senderID, receiverID: Nat, voteRequestResponse: RPC, msgType: mType . ( ((senderID != id) && (senderID < MaxServer) && (msgType == MTreqVoteResponse) && (receiverID == id)) ->
