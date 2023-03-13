@@ -62,12 +62,12 @@ eqn (first == 0) -> listSlice(log, slice, first, last) = listSlice(log, slice, 1
     (first > min(last, lengthLog(log))) -> listSlice(log, slice, first, last) = [];
 
 % slice a list of naturals (inclusive of first and last)
-map listSliceNat: List(Nat) # List(Nat) # Nat # Nat -> List(Nat);
+map listSliceNum: List(Nat) # List(Nat) # Int # Int -> List(Nat);
 var list, slicedList: List(Nat);
-    firstElement, lastElement: Nat; 
-eqn (firstElement == lastElement) -> listSliceNat(list, slicedList, firstElement, lastElement) = slicedList <| (list . lastElement);
-    (firstElement < lastElement) ->  listSliceNat(list, slicedList, firstElement, lastElement) = listSliceNat(list, slicedList <| (list . firstElement), firstElement + 1, lastElement);
-    (firstElement > lastElement) -> listSliceNat(list, slicedList, firstElement, lastElement) = [];
+    firstElement, lastElement: Int; 
+eqn (firstElement == lastElement) -> listSliceNum(list, slicedList, firstElement, lastElement) = slicedList <| (list . Int2Nat(lastElement));
+    (firstElement < lastElement) ->  listSliceNum(list, slicedList, firstElement, lastElement) = listSliceNum(list, slicedList <| (list . Int2Nat(firstElement)), firstElement + 1, lastElement);
+    (firstElement > lastElement) -> listSliceNum(list, slicedList, firstElement, lastElement) = [];
 
 % return the no. of servers that have a particular entry at the given index
 % Param 1: Index of the entry
@@ -153,7 +153,7 @@ proc Node(id: Nat, currentState: NodeState, currentTermNode: Nat, log: entryList
                                    (currentTerm(appendEntryRes) > currentTermNode) -> Node(currentTermNode = currentTerm(appendEntryRes), currentState = Follower, votedFor = -1)
                                    +
                                    (currentTerm(appendEntryRes) == currentTermNode) -> (
-                                        (success(appendEntryRes)) -> Node(nextIndex = (listSliceNat(nextIndex, [], 0, Int2Nat(senderID-1)) ++ [matchIndex(appendEntryRes) + 1] ++ listSliceNat(nextIndex, [], (senderID+1), Int2Nat(# nextIndex-1))), matchingIndex = (listSliceNat(matchingIndex, [], 0, Int2Nat(senderID-1)) ++ [matchIndex(appendEntryRes)] ++ listSliceNat(matchingIndex, [], (senderID+1), Int2Nat(# matchingIndex-1))))
+                                        (success(appendEntryRes)) -> Node(nextIndex = (listSliceNum(nextIndex, [], 0, (senderID-1)) ++ [matchIndex(appendEntryRes) + 1] ++ listSliceNum(nextIndex, [], (senderID+1), (# nextIndex-1))), matchingIndex = (listSliceNum(matchingIndex, [], 0, (senderID-1)) ++ [matchIndex(appendEntryRes)] ++ listSliceNum(matchingIndex, [], (senderID+1), (# matchingIndex-1))))
                                         <>
                                         Node()
                                    )
