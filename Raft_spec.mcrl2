@@ -183,48 +183,48 @@ proc Node(id: Nat, currentState: NodeState, currentTermNode: Nat, log: entryList
                     +
                     % become leader if majority votes
                     (# votesGranted >= MAJORITY) -> leaderTransition . Node(currentState = Leader, nextIndex = initArray(lengthLog(log) + 1, MaxServer), matchingIndex = initArray(0, MaxServer))
-                    )
-                    % things all states can do
-                    +
-                    % receive request vote request RPCs
-                    (sum senderID, receiverID: Nat, voteRequest: RPC, msgType: mType . ( ((senderID != id) && (senderID < MaxServer) && (msgType == MTreqVote) && (receiverID == id)) ->
-                              receiveRequestVote(receiverID, voteRequest, msgType, senderID) . (
-                                   % discard message if the term is older
-                                   (currentTerm(voteRequest) < currentTermNode) -> Node()
-                                   +
-                                   (                    
-                                        (currentTerm(voteRequest) == currentTermNode) -> 
-                                             ( 
-                                                       % check for validity of the log
-                                                       (lastLogTerm(voteRequest) >= getTerm(log, lengthLog(log))) -> (
-                                                            % vote for the server if we haven't voted for anything or already voted for it
-                                                            (votedFor == -1 || votedFor == senderID) -> sendRequestVoteResponse(senderID, ResponseVote(currentTermNode, true), MTreqVoteResponse, id) . Node(votedFor = senderID)
-                                                            % reject otherwise
-                                                            <>
-                                                            sendRequestVoteResponse(senderID, ResponseVote(currentTermNode, false), MTreqVoteResponse, id) . Node()
-                                                       )
+               )
+               % things all states can do
+               +
+               % receive request vote request RPCs
+               (sum senderID, receiverID: Nat, voteRequest: RPC, msgType: mType . ( ((senderID != id) && (senderID < MaxServer) && (msgType == MTreqVote) && (receiverID == id)) ->
+                         receiveRequestVote(receiverID, voteRequest, msgType, senderID) . (
+                              % discard message if the term is older
+                              (currentTerm(voteRequest) < currentTermNode) -> Node()
+                              +
+                              (                    
+                                   (currentTerm(voteRequest) == currentTermNode) -> 
+                                        ( 
+                                                  % check for validity of the log
+                                                  (lastLogTerm(voteRequest) >= getTerm(log, lengthLog(log))) -> (
+                                                       % vote for the server if we haven't voted for anything or already voted for it
+                                                       (votedFor == -1 || votedFor == senderID) -> sendRequestVoteResponse(senderID, ResponseVote(currentTermNode, true), MTreqVoteResponse, id) . Node(votedFor = senderID)
+                                                       % reject otherwise
                                                        <>
                                                        sendRequestVoteResponse(senderID, ResponseVote(currentTermNode, false), MTreqVoteResponse, id) . Node()
                                                   )
-                                   )
-                                   +
-                                   (                    
-                                        (currentTerm(voteRequest) > currentTermNode) -> 
-                                             ( % check for validity of the log
-                                                       (lastLogTerm(voteRequest) >= getTerm(log, lengthLog(log))) -> 
-                                                            % we don't check if we haven't voted for anything or already voted for it because when we update term we automatically set votedFor to nil
-                                                            sendRequestVoteResponse(senderID, ResponseVote(currentTerm(voteRequest), true), MTreqVoteResponse, id) . Node(currentTermNode = currentTerm(voteRequest), currentState = Follower, votedFor = senderID)
-                                                       % reject otherwise & become follower
-                                                       <>
-                                                       sendRequestVoteResponse(senderID, ResponseVote(currentTerm(voteRequest), false), MTreqVoteResponse, id) . Node(currentTermNode = currentTerm(voteRequest), currentState = Follower, votedFor = -1)
-                                                  )
-                                   )
-                                   +
-                                   % crash 
-                                   crash . Node (isCrashed = true)
-                                   +
-                                   % to get out when the other node is crashed (stuck)
-                                   Node()
+                                                  <>
+                                                  sendRequestVoteResponse(senderID, ResponseVote(currentTermNode, false), MTreqVoteResponse, id) . Node()
+                                             )
+                              )
+                              +
+                              (                    
+                                   (currentTerm(voteRequest) > currentTermNode) -> 
+                                        ( % check for validity of the log
+                                                  (lastLogTerm(voteRequest) >= getTerm(log, lengthLog(log))) -> 
+                                                       % we don't check if we haven't voted for anything or already voted for it because when we update term we automatically set votedFor to nil
+                                                       sendRequestVoteResponse(senderID, ResponseVote(currentTerm(voteRequest), true), MTreqVoteResponse, id) . Node(currentTermNode = currentTerm(voteRequest), currentState = Follower, votedFor = senderID)
+                                                  % reject otherwise & become follower
+                                                  <>
+                                                  sendRequestVoteResponse(senderID, ResponseVote(currentTerm(voteRequest), false), MTreqVoteResponse, id) . Node(currentTermNode = currentTerm(voteRequest), currentState = Follower, votedFor = -1)
+                                             )
+                              )
+                              +
+                              % crash 
+                              crash . Node (isCrashed = true)
+                              +
+                              % to get out when the other node is crashed (stuck)
+                              Node()
                          )
                     )
                )
@@ -339,7 +339,8 @@ proc Node(id: Nat, currentState: NodeState, currentTermNode: Nat, log: entryList
           )
      <>
      (    % resume after crashing
-          resume . Node (isCrashed = false)
+          resume . Node (currentState = Follower, commitIndex = 0,
+          votedFor = -1, votesGranted = [], nextIndex = initArray(0, MaxServer), matchingIndex = initArray(0, MaxServer), isCrashed = false)
      )
      ;
 
