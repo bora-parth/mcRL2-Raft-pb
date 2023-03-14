@@ -222,6 +222,9 @@ proc Node(id: Nat, currentState: NodeState, currentTermNode: Nat, log: entryList
                                    +
                                    % crash 
                                    crash . Node (isCrashed = true)
+                                   +
+                                   % to get out when the other node is crashed (stuck)
+                                   Node()
                          )
                     )
                )
@@ -324,6 +327,9 @@ proc Node(id: Nat, currentState: NodeState, currentTermNode: Nat, log: entryList
                               +
                               % crash 
                               crash . Node (isCrashed = true)
+                              +
+                              % to get out when the other node is crashed (stuck)
+                              Node()
                          )
                     )
                )
