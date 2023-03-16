@@ -2,15 +2,15 @@
 
 % no. of servers
 map MaxServer: Nat;
-eqn MaxServer = 2;
+eqn MaxServer = 3;
 
 % max no. of client requests
 map MaxClientRequest: Pos;
-eqn MaxClientRequest = 2;
+eqn MaxClientRequest = 3;
 
 %max no. of terms
 map MaxTerm: Pos;
-eqn MaxTerm = 2;
+eqn MaxTerm = 3;
 
 % no. that defines the majority within the cluster 
 % we don't model changes in cluster membership so this no. remains constant
@@ -56,8 +56,7 @@ eqn (index > 0) -> getTerm(log, index) = term(log . index);
 map listSlice: entryList # entryList # Nat # Nat -> entryList;
 var log, slice: entryList;
     first, last: Nat; 
-eqn (first == 0) -> listSlice(log, slice, first, last) = listSlice(log, slice, 1, last);
-    (first == min(last, lengthLog(log))) -> listSlice(log, slice, first, last) = slice <| (log . min(last, lengthLog(log)));
+eqn (first == min(last, lengthLog(log))) -> listSlice(log, slice, first, last) = slice <| (log . min(last, lengthLog(log)));
     (first < min(last, lengthLog(log))) ->  listSlice(log, slice, first, last) = listSlice(log, slice <| (log . first), first + 1, min(last, lengthLog(log)));
     (first > min(last, lengthLog(log))) -> listSlice(log, slice, first, last) = [];
 
@@ -304,7 +303,7 @@ proc Node(id: Nat, currentState: NodeState, currentTermNode: Nat, log: entryList
                                                        ((lengthLog(log) >= (prevLogIndex(appendEntry)+1)) && (getTerm(log, (prevLogIndex(appendEntry)+1)) !=  term(entries(appendEntry) . 0))) -> (
                                                             % append entry in the log if it is missing
                                                             % conflict and entries missing
-                                                            (lengthLog(listSlice(log, [], 0, prevLogIndex(appendEntry))) == prevLogIndex(appendEntry)) -> sendAppendEntriesResponse(senderID, AppendEntriesResponse(currentTerm(appendEntry), true, prevLogIndex(appendEntry) + 1), MTappendEntriesResponse, id) . Node(currentTermNode = currentTerm(appendEntry), currentState = Follower, votedFor = -1, log = listSlice(log, [], 0, prevLogIndex(appendEntry)) ++ entries(appendEntry), commitIndex = leaderCommit(appendEntry))
+                                                            (lengthLog(listSlice(log, [], 0, prevLogIndex(appendEntry)+1)) == prevLogIndex(appendEntry)) -> sendAppendEntriesResponse(senderID, AppendEntriesResponse(currentTerm(appendEntry), true, prevLogIndex(appendEntry) + 1), MTappendEntriesResponse, id) . Node(currentTermNode = currentTerm(appendEntry), currentState = Follower, votedFor = -1, log = listSlice(log, [], 0, prevLogIndex(appendEntry)) ++ entries(appendEntry), commitIndex = leaderCommit(appendEntry))
                                                             <>
                                                             % conflict and no entries missing
                                                             sendAppendEntriesResponse(senderID, AppendEntriesResponse(currentTerm(appendEntry), true, prevLogIndex(appendEntry) + 1), MTappendEntriesResponse, id) . Node(currentTermNode = currentTerm(appendEntry), currentState = Follower, votedFor = -1, log = listSlice(log, [], 0, prevLogIndex(appendEntry)), commitIndex = leaderCommit(appendEntry))
@@ -361,6 +360,7 @@ init allow( {appendEntryRequest, appendEntryResponse, RequestVoteMulti, VoteResp
 
                          Client(1) || Node(id = 0, currentState = Follower, currentTermNode = 0, log = [Command(0,0)], commitIndex = 0,
           votedFor = -1, votesGranted = [], nextIndex = initArray(0, MaxServer), matchingIndex = initArray(0, MaxServer), isCrashed = false) || Node(id = 1, currentState = Follower, currentTermNode = 0, log = [Command(0,0)], commitIndex = 0,
+          votedFor = -1, votesGranted = [], nextIndex = initArray(0, MaxServer), matchingIndex = initArray(0, MaxServer), isCrashed = false) || Node(id = 2, currentState = Follower, currentTermNode = 0, log = [Command(0,0)], commitIndex = 0,
           votedFor = -1, votesGranted = [], nextIndex = initArray(0, MaxServer), matchingIndex = initArray(0, MaxServer), isCrashed = false) 
 
                         % )
